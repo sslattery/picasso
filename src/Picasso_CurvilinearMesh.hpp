@@ -28,62 +28,196 @@
 namespace Picasso
 {
 //---------------------------------------------------------------------------//
+// Curvilinear mesh mapping function template interface. Describes the
+// physical frame and physical-to-reference mapping for a curvilinear mesh.
+//
+// Physical frame - the physical representation in the chosen mapping
+// coordinate system.
+//
+// Reference frame - the logical representation in the local grid reference
+// frame. Combined with global mesh information, the mesh mapping
+// implementation can convert this to a logical representation in the global
+// grid reference frame.
+//
+// The global reference frame spans from [0,globalNumCell(dim)] in each
+// dimension. The mesh data structure created from this mapping will apply
+// domain decomposition to the global reference frame and create a local
+// reference frame. Note that the global reference frame will be padded in
+// non-periodic dimensions by the base halo width when the mesh is constructed
+// to allow for stencil operations outside of the domain. Therefore in
+// practice the global reference frame spans from
+// [-base_halo,globalNumCell(dim)+base_halo] in each dimension.
+//
+template <class Mapping>
+struct CurvilinearMeshMapping
+{
+    // Memory space.
+    using memory_space = Mapping::memory_space;
+
+    // Spatial dimension.
+    static constexpr std::size_t num_space_dim = Mapping::num_space_dim;
+
+    // Get the global number of cells in given logical dimension that construct
+    // the mapping.
+    static int globalNumCell( const Mapping& mapping, const int dim );
+
+    // Get the periodicity of a given logical dimension of the mapping.
+    static bool periodic( const Mapping& mapping, const int dim );
+
+    // Forward mapping. Given coordinates in the local reference frame compute the
+    // coordinates in the physical frame.
+    template<class ReferenceCoords, class PhysicalCoords>
+    static KOKKOS_INLINE_FUNCTION void
+    mapToPhysicalFrame( const Mapping& mapping,
+                        const ReferenceCoords& local_ref_coords,
+                        PhysicalCoords& physical_coords );
+
+    // Given coordinates in the local reference frame compute the grid
+    // transformation metrics. This is the of jacobian of the forward mapping,
+    // its determinant, and inverse.
+    template<class ReferenceCoords>
+    static KOKKOS_INLINE_FUNCTION void
+    transformationMetrics(
+        const Mapping& mapping,
+        const ReferenceCoords& local_ref_coords,
+        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
+        num_space_dim,num_space_dim>& jacobian,
+        typename ReferenceCoordinates::value_type& jacobian_det,
+        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
+        num_space_dim,num_space_dim>& jacobian_inv )
+
+    // Reverse mapping. Given coordinates in the physical frame compute the
+    // coordinates in the local reference frame of the given cell. The
+    // contents of local_ref_coords will be used as the initial guess. Return
+    // whether or not the mapping succeeded.
+    template<class PhysicalCoords, class ReferenceCoords>
+    static KOKKOS_INLINE_FUNCTION bool
+    mapToReferenceFrame( const Mapping& mapping,
+                         const PhysicalCoords& physical_coords,
+                         const int ijk[num_space_dim],
+                         ReferenceCoords& local_ref_coords );
+};
+
+//---------------------------------------------------------------------------//
+// Default implementations for mesh mapping functions.
+template<class Mapping>
+struct DefaultCurvilinearMeshMapping
+{
+    // Reverse mapping. Given coordinates in the physical frame compute the
+    // coordinates in the local reference frame of the given cell. The
+    // contents of local_ref_coords will be used as the initial guess. Return
+    // whether or not the mapping succeeded.
+    template<class PhysicalCoords, class ReferenceCoords>
+    static KOKKOS_INLINE_FUNCTION bool
+    mapToReferenceFrame( const Mapping& mapping,
+                         const PhysicalCoords& physical_coords,
+                         const int ijk[num_space_dim],
+                         ReferenceCoords& local_ref_coords )
+    {
+        using value_type = typename PhysicalCoords::value_type;
+
+        // Newton iteration tolerance.
+        double tol = 1.0e-12;
+
+        // Maximum number of iterations.
+        int max_iter = 15;
+
+        // Iteration data.
+        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old = local_ref_coords;
+        LinearAlgebra::Vector<value_type,num_space_dim> x_phys_new;
+        LinearAlgebra::Matrix<value_type,num_space_dim,num_space_dim> jacobian;
+        value_type jacobian_det;
+        LinearAlgebra::Matrix<value_type,num_space_dim,num_space_dim> jacobian_inv;
+
+        // Newton iterations.
+        value_type error;
+        for ( int n = 0; n < max_iter; ++n )
+        {
+            CurvilinearMeshMapping<Mapping>::transformationMetrics(
+                mapping, x_ref_old, jacobian, jacobian_det, jacobian_inv );
+
+            CurvilinearMeshMapping<Mapping>::mapToPhysicalFrame(
+                mapping, x_ref_old, x_phys_new );
+
+            local_ref_coords =
+                jacobian_inv * ( physical_coords - x_phys_new ) + x_old;
+
+            error = ~(local_ref_coords - x_old) * (local_ref_coords - x_old);
+
+            if ( error < tol )
+                return true;
+        }
+
+        // Return false if we failed to converge.
+        return false;
+    }
+};
+
+//---------------------------------------------------------------------------//
 /*!
   \class CurvilinearMesh
-  \brief Logically rectilinear curvilinear mesh.
+  \brief Logically rectilinear curvilinear mesh based on a given mapping.
  */
-template <class MemorySpace, std::size_t NumSpaceDim>
+template <class Mapping>
 class CurvilinearMesh
 {
   public:
-    using memory_space = MemorySpace;
+    using memory_space =
+        typename CurvilinearMeshMapping<Mapping>::memory_space;
 
-    static constexpr std::size_t num_space_dim = NumSpaceDim;
+    using mesh_mapping = Mapping;
 
-    using cajita_mesh = Cajita::UniformMesh<double,NumSpaceDim>;
+    static constexpr std::size_t num_space_dim =
+        CurvilinearMeshMapping<Mapping>::num_space_dim;
+
+    using cajita_mesh = Cajita::UniformMesh<double,num_space_dim>;
 
     using local_grid = Cajita::LocalGrid<cajita_mesh>;
 
     /*!
       \brief Constructor.
-      \param global_num_cell The global number of cells to put in each logical
-      dimension.
-      \param periodic The peridocity of each logical dimension.
-      \param halo_width The number of cells to use for the domain
-      decomposition halo.
-      \param boundary_padding The number of cells to pad non-periodic physical
-      boundaries with.
+      \param mapping The mapping with which to build the curvilinear mesh.
+      \param base_halo The number of cells required for grid-based halo
+      operations.
+      \param extended_halo The number of cells to use for extended halo
+      (e.g. particle) operations. The extended halo and the base halo can be
+      the same.
       \param comm The MPI comm to use for the mesh.
       \param ranks_per_dim The number of MPI ranks to assign to each logical
       dimension in the partitioning.
     */
     template <class ExecutionSpace>
-    CurvilinearMesh( const std::array<int,NumSpaceDim>& global_num_cell,
-                     const std::array<bool,NumSpaceDim>& periodic,
-                     const int boundary_padding,
-                     const int halo_width,
+    CurvilinearMesh( const Mapping& mapping,
+                     const int base_halo,
+                     const int extendend_halo,
                      MPI_Comm comm,
-                     const std::array<int,NumSpaceDim>& ranks_per_dim )
-        : _boundary_padding( minimum_halo_cell_width )
+                     const std::array<int,num_space_dim>& ranks_per_dim )
+        : _base_halo( minimum_halo_cell_width )
     {
         // The logical grid is uniform with unit cell size.
-        std::array<double, NumSpaceDim> global_low_corner;
-        std::array<double, NumSpaceDim> global_high_corner;
-        for ( std::size_t d = 0; d < NumSpaceDim; ++d )
+        std::array<int, num_space_dim> global_num_cell;
+        std::array<bool, num_space_dim> periodic;
+        std::array<double, num_space_dim> global_low_corner;
+        std::array<double, num_space_dim> global_high_corner;
+        for ( std::size_t d = 0; d < num_space_dim; ++d )
         {
+            global_num_cell[d] =
+                CurvilinearMeshMapping<Mapping>::globalNumCell( mapping, d );
+            periodic[d] =
+                CurvilinearMeshMapping<Mapping>::periodic( mapping, d );
             global_low_corner[d] = 0.0;
             global_high_corner[d] = static_cast<double>(global_num_cell[d]);
         }
 
         // For dimensions that are not periodic we pad by the minimum halo
         // cell width to allow for projections outside of the domain.
-        for ( std::size_t d = 0; d < NumSpaceDim; ++d )
+        for ( std::size_t d = 0; d < num_space_dim; ++d )
         {
             if ( !periodic[d] )
             {
-                global_num_cell[d] += 2 * _boundary_padding;
-                global_low_corner[d] -= _boundary_padding;
-                global_high_corner[d] += _boundary_padding;
+                global_num_cell[d] += 2 * _base_halo;
+                global_low_corner[d] -= _base_halo;
+                global_high_corner[d] += _base_halo;
             }
         }
 
@@ -94,20 +228,24 @@ class CurvilinearMesh
         // Build the global grid.
         auto global_grid = Cajita::createGlobalGrid(
             comm, global_mesh, periodic,
-            Cajita::ManualBlockPartitioner<NumSpaceDim>(ranks_per_dim) );
+            Cajita::ManualBlockPartitioner<num_space_dim>(ranks_per_dim) );
 
         // Build the local grid.
         _local_grid = Cajita::createLocalGrid( global_grid, halo_width );
     }
 
-    // Get the physical boundary padding.
-    int boundaryPadding() const { return _boundary_padding; }
+    // Get the number of cells in the base halo.
+    int baseHalo() const { return _base_halo; }
+
+    // Get the number of cells in the extended halo.
+    int extendedHalo() const { return _extended_halo; }
 
     // Get the local grid.
     std::shared_ptr<local_grid> localGrid() const { return _local_grid; }
 
   public:
-    int _boundary_padding;
+    int _base_halo;
+    int _extended_halo;
     std::shared_ptr<local_grid> _local_grid;
 };
 
@@ -118,8 +256,8 @@ struct is_curvilinear_mesh_impl : public std::false_type
 {
 };
 
-template <class MemorySpace, std::size_t NumSpaceDim>
-struct is_curvilinear_mesh_impl<CurvilinearMesh<MemorySpace,NumSpaceDim>> : public std::true_type
+template <class Mapping>
+struct is_curvilinear_mesh_impl<CurvilinearMesh<Mapping>> : public std::true_type
 {
 };
 
@@ -131,78 +269,17 @@ struct is_curvilinear_mesh
 
 //---------------------------------------------------------------------------//
 // Creation function.
-template<class MemorySpace,std::size_t NumSpaceDim>
+template<class Mapping>
 auto createCurvilinearMesh(
-    MemorySpace,
-    SpaceDim<NumSpaceDim>,
-    const std::array<int,NumSpaceDim>& global_num_cell,
-    const std::array<bool,NumSpaceDim>& periodic,
-    const int boundary_padding,
-    const int halo_width,
+    const Mapping& mapping,
+    const int base_halo,
+    const int extended_halo,
     MPI_Comm comm,
     const std::array<int,NumSpaceDim>& ranks_per_dim )
 {
-    return std::make_shared<CurvilinearMesh<MemorySpace,NumSpaceDim>>(
-        global_num_cell, periodic, boundary_padding, halo_width,
-        comm, ranks_per_dim );
+    return std::make_shared<CurvilinearMesh<Mapping>>(
+        mapping, base_halo, extended_halo, comm, ranks_per_dim );
 }
-
-//---------------------------------------------------------------------------//
-// Curvilinear mesh mapping function template interface.
-//
-// Physical frame - the physical representation in the chosen mapping
-// coordinate system.
-//
-// Reference frame - the logical representation in the local grid reference
-// frame. Combined with global mesh information, the mesh mapping
-// implementation can convert this to a logical representation in the global
-// grid reference frame.
-//
-template <class Mapping>
-class CurvilinearMeshMapping
-{
-  public:
-
-    // Spatial dimension.
-    static constexpr std::size_t num_space_dim = Mapping::num_space_dim;
-
-    // Forward mapping. Given coordinates in the local reference frame compute the
-    // coordinates in the physical frame.
-    template<class ReferenceCoords, class PhysicalCoords>
-    static KOKKOS_INLINE_FUNCTION void
-    mapToPhysicalFrame( const ReferenceCoords& local_ref_coords,
-                        PhysicalCoords& physical_coords );
-
-    // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame.
-    template<class PhysicalCoords, class ReferenceCoords>
-    static KOKKOS_INLINE_FUNCTION void
-    mapToReferenceFrame( const PhysicalCoords& physical_coords,
-                         ReferenceCoords& local_ref_coords );
-
-    // Given coordinates in the local reference frame compute the Jacobian of
-    // the forward mapping.
-    template<class ReferenceCoords>
-    static KOKKOS_INLINE_FUNCTION void
-    jacobian( const ReferenceCoords& local_ref_coords,
-              LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
-              num_space_dim,num_space_dim>& jacobian );
-
-    // Given coordinates in the local reference frame compute the determinant of
-    // the Jacobian of the forward mapping.
-    template<class ReferenceCoords>
-    static KOKKOS_INLINE_FUNCTION void
-    jacobianDeterminant( const ReferenceCoords& local_ref_coords,
-                         typename ReferenceCoordinates::value_type& jacobian_det );
-
-    // Given coordinates in the local reference frame compute the inverse of
-    // the Jacobian of the forward mapping.
-    template<class ReferenceCoords>
-    static KOKKOS_INLINE_FUNCTION void
-    jacobianInverse( const ReferenceCoords& local_ref_coords,
-                     LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
-                     num_space_dim,num_space_dim>& jacobian_inv );
-};
 
 //---------------------------------------------------------------------------//
 

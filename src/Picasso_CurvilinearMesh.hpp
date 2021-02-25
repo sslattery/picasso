@@ -103,15 +103,16 @@ struct CurvilinearMeshMapping
 template<class Mapping>
 struct DefaultCurvilinearMeshMapping
 {
+    static constexpr std::size_t num_space_dim = Mapping::num_space_dim;
+
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame of the given cell. The
-    // contents of local_ref_coords will be used as the initial guess. Return
+    // coordinates in the local reference frame of the given cell. Return
     // whether or not the mapping succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const Mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         const int ijk[num_space_dim],
+                         const int cell_ijk[num_space_dim],
                          ReferenceCoords& local_ref_coords )
     {
         using value_type = typename PhysicalCoords::value_type;
@@ -122,8 +123,14 @@ struct DefaultCurvilinearMeshMapping
         // Maximum number of iterations.
         int max_iter = 15;
 
+        // Initial guess at cell center.
+        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old;
+        for ( std::size_t d = 0; d < num_space_dim; ++d )
+        {
+            x_ref_old[d] = cell_ijk[d] + 0.5;
+        }
+
         // Iteration data.
-        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old = local_ref_coords;
         LinearAlgebra::Vector<value_type,num_space_dim> x_phys_new;
         LinearAlgebra::Matrix<value_type,num_space_dim,num_space_dim> jacobian;
         value_type jacobian_det;

@@ -127,7 +127,7 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     template<class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
-        const Mapping& mapping,
+        const mesh_mapping& mapping,
         const ReferenceCoords& local_ref_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian,
         typename ReferenceCoordinates::value_type& jacobian_det,
@@ -172,19 +172,17 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     }
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame of the given cell. The
-    // contents of local_ref_coords will be used as the initial guess. Return
+    // coordinates in the local reference frame of the given cell. Return
     // whether or not the mapping succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const mesh_mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         const int ijk[3],
+                         const int cell_ijk[3],
                          ReferenceCoords& reference_coords )
     {
-        return DefaultCurvilinearMeshMapping<
-            BilinearMeshMapping<MemorySpace,3>>::mapToReferenceFrame(
-                mapping, physical_coords, ijk, reference_coords );
+        return DefaultCurvilinearMeshMapping<mesh_mapping>::mapToReferenceFrame(
+                mapping, physical_coords, cell_ijk, reference_coords );
     }
 };
 
@@ -243,7 +241,7 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     template<class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
-        const Mapping& mapping,
+        const mesh_mapping& mapping,
         const ReferenceCoords& local_ref_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,2,2>& jacobian,
         typename ReferenceCoordinates::value_type& jacobian_det,
@@ -281,23 +279,21 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     }
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame of the given cell. The
-    // contents of local_ref_coords will be used as the initial guess. Return
+    // coordinates in the local reference frame of the given cell. Return
     // whether or not the mapping succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const mesh_mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         const int ijk[2],
+                         const int cell_ijk[2],
                          ReferenceCoords& reference_coords )
     {
         // NOTE: I am using the default procedure here but it is possible that
         // the procedure outlined on page 329 of the 1986 Brackbill FLIP paper
         // could be more efficient here as it is a direct solve. This default
         // version could be used if that one fails.
-        return DefaultCurvilinearMeshMapping<
-            BilinearMeshMapping<MemorySpace,2>>::mapToReferenceFrame(
-                mapping, physical_coords, ijk, reference_coords );
+        return DefaultCurvilinearMeshMapping<mesh_mapping>::mapToReferenceFrame(
+                mapping, physical_coords, cell_ijk, reference_coords );
     }
 };
 

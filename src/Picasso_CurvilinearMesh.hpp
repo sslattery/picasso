@@ -105,32 +105,30 @@ struct DefaultCurvilinearMeshMapping
 {
     static constexpr std::size_t num_space_dim = Mapping::num_space_dim;
 
+    // NOTE: Automatic differentiation of mapToPhysicalFrame could be used as
+    // a default implementation of the transformation metrics.
+
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame of the given cell. Return
-    // whether or not the mapping succeeded.
+    // coordinates in the local reference frame. The data in local_ref_coords
+    // will be used as the initial guess. Return whether or not the mapping
+    // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const Mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         const int cell_ijk[num_space_dim],
                          ReferenceCoords& local_ref_coords )
     {
         using value_type = typename PhysicalCoords::value_type;
 
         // Newton iteration tolerance.
         double tol = 1.0e-12;
+        double tol2 = tol * tol;
 
-        // Maximum number of iterations.
+        // Maximum number of Newton iterations.
         int max_iter = 15;
 
-        // Initial guess at cell center.
-        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old;
-        for ( std::size_t d = 0; d < num_space_dim; ++d )
-        {
-            x_ref_old[d] = cell_ijk[d] + 0.5;
-        }
-
         // Iteration data.
+        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old
         LinearAlgebra::Vector<value_type,num_space_dim> x_phys_new;
         LinearAlgebra::Matrix<value_type,num_space_dim,num_space_dim> jacobian;
         value_type jacobian_det;
@@ -140,18 +138,26 @@ struct DefaultCurvilinearMeshMapping
         value_type error;
         for ( int n = 0; n < max_iter; ++n )
         {
+            // Update iteration.
+            x_ref_old = local_ref_coords;
+
+            // Compute jacobian.
             CurvilinearMeshMapping<Mapping>::transformationMetrics(
                 mapping, x_ref_old, jacobian, jacobian_det, jacobian_inv );
 
+            // Compute residual.
             CurvilinearMeshMapping<Mapping>::mapToPhysicalFrame(
                 mapping, x_ref_old, x_phys_new );
 
+            // Update solution.
             local_ref_coords =
-                jacobian_inv * ( physical_coords - x_phys_new ) + x_old;
+                jacobian_inv * ( physical_coords - x_phys_new ) + x_ref_old;
 
-            error = ~(local_ref_coords - x_old) * (local_ref_coords - x_old);
+            // Check for convergence.
+            error = ~(local_ref_coords - x_ref_old) * (local_ref_coords - x_ref_old);
 
-            if ( error < tol )
+            // Return true if we converged.
+            if ( error < tol2 )
                 return true;
         }
 
@@ -169,10 +175,11 @@ template <class Mapping>
 class CurvilinearMesh
 {
   public:
-    using memory_space =
-        typename CurvilinearMeshMapping<Mapping>::memory_space;
 
     using mesh_mapping = Mapping;
+
+    using memory_space =
+        typename CurvilinearMeshMapping<Mapping>::memory_space;
 
     static constexpr std::size_t num_space_dim =
         CurvilinearMeshMapping<Mapping>::num_space_dim;
@@ -194,12 +201,14 @@ class CurvilinearMesh
       dimension in the partitioning.
     */
     template <class ExecutionSpace>
-    CurvilinearMesh( const Mapping& mapping,
+    CurvilinearMesh( const std::shared_ptr<Mapping>& mapping,
                      const int base_halo,
                      const int extendend_halo,
                      MPI_Comm comm,
                      const std::array<int,num_space_dim>& ranks_per_dim )
-        : _base_halo( minimum_halo_cell_width )
+        : _mapping( mapping )
+        , _base_halo( minimum_halo_cell_width )
+
     {
         // The logical grid is uniform with unit cell size.
         std::array<int, num_space_dim> global_num_cell;
@@ -209,9 +218,9 @@ class CurvilinearMesh
         for ( std::size_t d = 0; d < num_space_dim; ++d )
         {
             global_num_cell[d] =
-                CurvilinearMeshMapping<Mapping>::globalNumCell( mapping, d );
+                CurvilinearMeshMapping<Mapping>::globalNumCell( *_mapping, d );
             periodic[d] =
-                CurvilinearMeshMapping<Mapping>::periodic( mapping, d );
+                CurvilinearMeshMapping<Mapping>::periodic( *_mapping, d );
             global_low_corner[d] = 0.0;
             global_high_corner[d] = static_cast<double>(global_num_cell[d]);
         }
@@ -247,10 +256,14 @@ class CurvilinearMesh
     // Get the number of cells in the extended halo.
     int extendedHalo() const { return _extended_halo; }
 
+    // Get the mesh mapping.
+    const mesh_mapping& mapping() const { return *_mapping; }
+
     // Get the local grid.
     std::shared_ptr<local_grid> localGrid() const { return _local_grid; }
 
   public:
+    std::shared_ptr<mesh_mapping> _mapping;
     int _base_halo;
     int _extended_halo;
     std::shared_ptr<local_grid> _local_grid;

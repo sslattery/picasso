@@ -6,6 +6,8 @@ set(HEADERS
   Picasso_AdaptiveMesh.hpp
   Picasso_APIC.hpp
   Picasso_BatchedLinearAlgebra.hpp
+  Picasso_BilinearMeshMapping.hpp
+  Picasso_CurvilinearMesh.hpp
   Picasso_FacetGeometry.hpp
   Picasso_FieldManager.hpp
   Picasso_FieldTypes.hpp

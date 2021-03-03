@@ -32,7 +32,7 @@ namespace Picasso
   \brief Bilinear mesh mapping function.
 
   All cells in the mesh are described by physical node locations and a linear
-  lagrange basis representing the space continuum between them.
+  polynomial basis representing the space continuum between them.
  */
 template<class MemorySpace, std::size_t NumSpaceDim>
 class BilinearMeshMapping
@@ -320,7 +320,7 @@ struct BilinearMeshGenerator
 };
 
 //---------------------------------------------------------------------------//
-// Create a bilinear mesh using a generator.  Creates a mapping, a mesh, a
+// Create a bilinear mesh using a generator. Creates a mapping, a mesh, a
 // field manager, a coordinate array in the field manager, assigns the
 // coordinate field to the mapping, and populates the coordinates. A field
 // manager containing the mesh is returned.
@@ -402,9 +402,10 @@ struct BilinearMeshGenerator<UniformCartesianBilinearMeshGenerator<NumSpaceDim>>
         return generator.periodic;
     }
 
-    // Given the local grid compute populate the local node coordinates.
-    template<class NodeCoordinateArray>
-    static void
+    // Given the local grid compute populate the local node coordinates. 3D
+    // Specialization.
+    template<class NodeCoordinateArray, std::size_t NSD = 3>
+    static std::enable_if_t<3==NSD,void>
     createLocalNodeCoordinates( const Generator& generator,
                                 const NodeCoordinateArray& coords )
     {
@@ -433,6 +434,39 @@ struct BilinearMeshGenerator<UniformCartesianBilinearMeshGenerator<NumSpaceDim>>
                         local_mesh.lowCorner( Cajita::Ghost(), 2 ) +
                         k * cell_size[2];
                 }
+
+        // Move nodes to device.
+        Kokkos::deep_copy( coords.view(), nodes );
+    }
+
+    // Given the local grid compute populate the local node coordinates. 2D
+    // Specialization.
+    template<class NodeCoordinateArray, std::size_t NSD = 2>
+    static std::enable_if_t<2==NSD,void>
+    createLocalNodeCoordinates( const Generator& generator,
+                                const NodeCoordinateArray& coords )
+    {
+        // Create nodes on the host.
+        auto nodes = Kokkos::create_mirror_view(
+            Kokkos::HostSpace(), coords.view() );
+
+        // Create owned nodes.
+        auto local_grid = coords.layout()->localGrid();
+        auto l2g = Cajita::createL2G( *local_grid, Cajita::Node() );
+        auto local_space = local_grid->indexSpace(
+            Cajita::Own(), Cajita::Node(), Cajita::Local() );
+        for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
+            for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
+            {
+                int gi, gj;
+                l2g( i, j, gi, gj );
+                node_view( i, j,  0 ) =
+                    local_mesh.lowCorner( Cajita::Ghost(), 0 ) +
+                    i * cell_size[0];
+                node_view( i, j,  1 ) =
+                    local_mesh.lowCorner( Cajita::Ghost(), 1 ) +
+                    j * cell_size[1];
+            }
 
         // Move nodes to device.
         Kokkos::deep_copy( coords.view(), nodes );

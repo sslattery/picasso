@@ -64,8 +64,8 @@ struct CurvilinearMeshMapping
     // Get the periodicity of a given logical dimension of the mapping.
     static bool periodic( const Mapping& mapping, const int dim );
 
-    // Forward mapping. Given coordinates in the local reference frame compute the
-    // coordinates in the physical frame.
+    // Forward mapping. Given coordinates in the local reference frame compute
+    // the coordinates in the physical frame.
     template<class ReferenceCoords, class PhysicalCoords>
     static KOKKOS_INLINE_FUNCTION void
     mapToPhysicalFrame( const Mapping& mapping,
@@ -73,7 +73,7 @@ struct CurvilinearMeshMapping
                         PhysicalCoords& physical_coords );
 
     // Given coordinates in the local reference frame compute the grid
-    // transformation metrics. This is the of jacobian of the forward mapping,
+    // transformation metrics. This is the jacobian of the forward mapping,
     // its determinant, and inverse.
     template<class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION void
@@ -87,14 +87,13 @@ struct CurvilinearMeshMapping
         num_space_dim,num_space_dim>& jacobian_inv )
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame of the given cell. The
-    // contents of local_ref_coords will be used as the initial guess. Return
-    // whether or not the mapping succeeded.
+    // coordinates in the local reference frame. The data in local_ref_coords
+    // will be used as the initial guess. Return whether or not the mapping
+    // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const Mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         const int ijk[num_space_dim],
                          ReferenceCoords& local_ref_coords );
 };
 
@@ -225,7 +224,7 @@ class CurvilinearMesh
             global_high_corner[d] = static_cast<double>(global_num_cell[d]);
         }
 
-        // For dimensions that are not periodic we pad by the minimum halo
+        // For dimensions that are not periodic we pad by the baso halo
         // cell width to allow for projections outside of the domain.
         for ( std::size_t d = 0; d < num_space_dim; ++d )
         {

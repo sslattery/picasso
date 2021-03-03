@@ -32,6 +32,7 @@ void constructionTest()
     double cell_size = 0.5;
     int num_cell = 20.0 / cell_size;
     int base_halo = 1;
+    int extended_halo = 0;
     Kokkos::Array<bool,3> periodic = { true, false, true };
 
     // Partition only in the x direction.
@@ -39,26 +40,30 @@ void constructionTest()
     MPI_Comm_size( MPI_COMM_WORLD, &ranks_per_dim[0] );
 
     // Create the mesh and field manager.
-    auto field_manager =
+    auto manager =
         createUniformCartesianMesh( TEST_MEMSPACE{}, cell_size,
-                                    glboal_box, periodic,
-                                    base_halo, base_halo,
+                                    global_box, periodic,
+                                    base_halo, extended_halo,
                                     MPI_COMM_WORLD, ranks_per_dim );
 
     // Check the mapping.
-    auto mapping = field_manager.mesh().mapping();
-    EXPECT_EQ( cell_size, mapping.cell_size );
-    EXPECT_EQ( 1.0 / cell_size, mapping.inv_cell_size );
-    EXPECT_EQ( cell_size * cell_size * cell_size, mapping.cell_measure );
-    EXPECT_EQ( 1.0/ (cell_size * cell_size * cell_size), mapping.inv_cell_measure );
+    auto mapping = manager->mesh().mapping();
+    EXPECT_EQ( cell_size, mapping._cell_size );
+    EXPECT_EQ( 1.0 / cell_size, mapping._inv_cell_size );
+    EXPECT_EQ( cell_size * cell_size * cell_size, mapping._cell_measure );
+    EXPECT_EQ( 1.0/ (cell_size * cell_size * cell_size), mapping._inv_cell_measure );
     for ( int d = 0; d < 3; ++d )
     {
         EXPECT_EQ( num_cell, mapping._global_num_cell[d] );
-        EXPECT_EQ( perodic[d], mapping._periodic[d] );
+        EXPECT_EQ( periodic[d], mapping._periodic[d] );
     }
 
+    // Check mesh.
+    EXPECT_EQ( base_halo, manager->mesh().baseHalo() );
+    EXPECT_EQ( base_halo, manager->mesh().extendedHalo() );
+
     // Check grid.
-    const auto& global_grid = mesh.localGrid()->globalGrid();
+    const auto& global_grid = manager->mesh().localGrid()->globalGrid();
     const auto& global_mesh = global_grid.globalMesh();
 
     EXPECT_EQ( global_mesh.lowCorner( 0 ), global_box[0] );
@@ -78,7 +83,7 @@ void constructionTest()
     EXPECT_FALSE( global_grid.isPeriodic( 1 ) );
     EXPECT_TRUE( global_grid.isPeriodic( 2 ) );
 
-    EXPECT_EQ( mesh.localGrid()->haloCellWidth(), 1 );
+    EXPECT_EQ( manager->mesh().localGrid()->haloCellWidth(), 1 );
 }
 
 //---------------------------------------------------------------------------//

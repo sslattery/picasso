@@ -13,6 +13,7 @@
 #define PICASSO_UNIFORMCARTESIANMESHMAPPING_HPP
 
 #include <Picasso_CurvilinearMesh.hpp>
+#include <Picasso_FieldManager.hpp>
 #include <Picasso_BatchedLinearAlgebra.hpp>
 #include <Picasso_Types.hpp>
 
@@ -33,8 +34,11 @@ namespace Picasso
   \brief Uniform Cartesian mesh mapping function.
  */
 template<class MemorySpace, std::size_t NumSpaceDim>
-class UniformCartesianMeshMapping
+struct UniformCartesianMeshMapping
 {
+    using memory_space = MemorySpace;
+    static constexpr std::size_t num_space_dim = NumSpaceDim;
+
     double _cell_size;
     double _inv_cell_size;
     double _cell_measure;
@@ -52,8 +56,8 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
 {
   public:
     using memory_space = MemorySpace;
-    using mesh_mapping = UniformCartesianMeshMapping<NumSpaceDim>;
     static constexpr std::size_t num_space_dim = NumSpaceDim;
+    using mesh_mapping = UniformCartesianMeshMapping<MemorySpace,NumSpaceDim>;
 
     // Get the global number of cells in given logical dimension that construct
     // the mapping.
@@ -88,9 +92,9 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
         const mesh_mapping& mapping,
-        const ReferenceCoords& local_ref_coords,
+        const ReferenceCoords&,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian,
-        typename ReferenceCoordinates::value_type& jacobian_det,
+        typename ReferenceCoords::value_type& jacobian_det,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian_inv )
     {
         for ( std::size_t i = 0; i < num_space_dim; ++i )
@@ -136,15 +140,16 @@ auto createUniformCartesianMesh(
     const std::array<int,NumSpaceDim>& ranks_per_dim )
 {
     // Create the mapping.
-    UniformCartesianMeshMapping<MemorySpace,NumSpaceDim> mapping;
-    mapping._cell_size = cell_size;
-    mapping._inv_cell_size = 1.0 / cell_size;
-    mapping._cell_measure = pow( cell_size, NumSpaceDim );
-    mapping._inv_cell_measure = 1.0 / mapping._cell_measure;
-    mapping._periodic = periodic;
-    for ( std::size_t d = 0; d < num_space_dim; ++d )
+    auto mapping = std::make_shared<
+        UniformCartesianMeshMapping<MemorySpace,NumSpaceDim>>();
+    mapping->_cell_size = cell_size;
+    mapping->_inv_cell_size = 1.0 / cell_size;
+    mapping->_cell_measure = pow( cell_size, NumSpaceDim );
+    mapping->_inv_cell_measure = 1.0 / mapping->_cell_measure;
+    mapping->_periodic = periodic;
+    for ( std::size_t d = 0; d < NumSpaceDim; ++d )
     {
-        mapping._global_num_cell[d] =
+        mapping->_global_num_cell[d] =
             ( global_bounding_box[2*d+1] -
               global_bounding_box[2*d] ) / cell_size;
     }
@@ -159,10 +164,10 @@ auto createUniformCartesianMesh(
     // Get the local bounds.
     auto local_mesh =
         Cajita::createLocalMesh<Kokkos::HostSpace>( *(mesh->localGrid()) );
-    for ( std::size_t d = 0; d < num_space_dim; ++d )
+    for ( std::size_t d = 0; d < NumSpaceDim; ++d )
     {
-        mapping._local_min[d] = local_mesh.lowCorner( Cajita::Ghost(), d );
-        mapping._local_max[d] = local_mesh.highCorner( Cajita::Ghost(), d );
+        mapping->_local_min[d] = local_mesh.lowCorner( Cajita::Ghost(), d );
+        mapping->_local_max[d] = local_mesh.highCorner( Cajita::Ghost(), d );
     }
 
     return manager;

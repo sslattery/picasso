@@ -101,7 +101,7 @@ class FieldManager
     }
 
     // Get the mesh.
-    const Mesh& mesh() const { return _mesh; }
+    const Mesh& mesh() const { return *_mesh; }
 
     // Add a field. The field will be allocated and a halo created if it does
     // not already exist.

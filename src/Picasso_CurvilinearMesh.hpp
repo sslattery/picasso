@@ -19,6 +19,7 @@
 
 #include <Kokkos_Core.hpp>
 
+#include <cmath>
 #include <array>
 #include <type_traits>
 #include <memory>
@@ -52,7 +53,7 @@ template <class Mapping>
 struct CurvilinearMeshMapping
 {
     // Memory space.
-    using memory_space = Mapping::memory_space;
+    using memory_space = typename Mapping::memory_space;
 
     // Spatial dimension.
     static constexpr std::size_t num_space_dim = Mapping::num_space_dim;
@@ -82,9 +83,9 @@ struct CurvilinearMeshMapping
         const ReferenceCoords& local_ref_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
         num_space_dim,num_space_dim>& jacobian,
-        typename ReferenceCoordinates::value_type& jacobian_det,
+        typename ReferenceCoords::value_type& jacobian_det,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
-        num_space_dim,num_space_dim>& jacobian_inv )
+        num_space_dim,num_space_dim>& jacobian_inv );
 
     // Reverse mapping. Given coordinates in the physical frame compute the
     // coordinates in the local reference frame. The data in local_ref_coords
@@ -127,7 +128,7 @@ struct DefaultCurvilinearMeshMapping
         int max_iter = 15;
 
         // Iteration data.
-        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old
+        LinearAlgebra::Vector<value_type,num_space_dim> x_ref_old;
         LinearAlgebra::Vector<value_type,num_space_dim> x_phys_new;
         LinearAlgebra::Matrix<value_type,num_space_dim,num_space_dim> jacobian;
         value_type jacobian_det;
@@ -194,21 +195,23 @@ class CurvilinearMesh
       operations.
       \param extended_halo The number of cells to use for extended halo
       (e.g. particle) operations. The extended halo and the base halo can be
-      the same.
+      the same. If the extended halo is smaller than the base halo the base
+      halo will be used.
       \param comm The MPI comm to use for the mesh.
       \param ranks_per_dim The number of MPI ranks to assign to each logical
       dimension in the partitioning.
     */
-    template <class ExecutionSpace>
     CurvilinearMesh( const std::shared_ptr<Mapping>& mapping,
                      const int base_halo,
-                     const int extendend_halo,
+                     const int extended_halo,
                      MPI_Comm comm,
                      const std::array<int,num_space_dim>& ranks_per_dim )
         : _mapping( mapping )
-        , _base_halo( minimum_halo_cell_width )
-
+        , _base_halo( base_halo )
     {
+        // Extended halo must be at least as big as the base halo.
+        _extended_halo = std::max( base_halo, extended_halo );
+
         // The logical grid is uniform with unit cell size.
         std::array<int, num_space_dim> global_num_cell;
         std::array<bool, num_space_dim> periodic;
@@ -246,7 +249,7 @@ class CurvilinearMesh
             Cajita::ManualBlockPartitioner<num_space_dim>(ranks_per_dim) );
 
         // Build the local grid.
-        _local_grid = Cajita::createLocalGrid( global_grid, halo_width );
+        _local_grid = Cajita::createLocalGrid( global_grid, _extended_halo );
     }
 
     // Get the number of cells in the base halo.
@@ -290,11 +293,11 @@ struct is_curvilinear_mesh
 // Creation function.
 template<class Mapping>
 auto createCurvilinearMesh(
-    const Mapping& mapping,
+    const std::shared_ptr<Mapping>& mapping,
     const int base_halo,
     const int extended_halo,
     MPI_Comm comm,
-    const std::array<int,NumSpaceDim>& ranks_per_dim )
+    const std::array<int,Mapping::num_space_dim>& ranks_per_dim )
 {
     return std::make_shared<CurvilinearMesh<Mapping>>(
         mapping, base_halo, extended_halo, comm, ranks_per_dim );

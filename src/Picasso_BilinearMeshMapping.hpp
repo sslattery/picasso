@@ -13,6 +13,7 @@
 #define PICASSO_BILINEARMESHMAPPING_HPP
 
 #include <Picasso_CurvilinearMesh.hpp>
+#include <Picasso_FieldManager.hpp>
 #include <Picasso_BatchedLinearAlgebra.hpp>
 #include <Picasso_Types.hpp>
 
@@ -35,10 +36,8 @@ namespace Picasso
   polynomial basis representing the space continuum between them.
  */
 template<class MemorySpace, std::size_t NumSpaceDim>
-class BilinearMeshMapping
+struct BilinearMeshMapping
 {
-  public:
-
     using memory_space = MemorySpace;
 
     static constexpr std::size_t num_space_dim = NumSpaceDim;
@@ -64,7 +63,6 @@ class BilinearMeshMapping
         _local_node_coords = local_node_coords;
     }
 
-  public:
     Kokkos::Array<int,NumSpaceDim> _global_num_cell;
     Kokkos::Array<bool,NumSpaceDim> _periodic;
     coord_view_type _local_node_coords;
@@ -336,9 +334,11 @@ auto createBilinearMesh(
     const std::array<int,NumSpaceDim>& ranks_per_dim )
 {
     // Create the mapping.
-    BilinearMeshMapping<MemorySpace,NumSpaceDim>
-        mapping( BilinearMeshGenerator<Generator>::globalNumCell(generator),
-                 BilinearMeshGenerator<Generator>::periodic(generator) );
+    auto mapping =
+        std::make_shared<
+            BilinearMeshMapping<MemorySpace,NumSpaceDim>>(
+                BilinearMeshGenerator<Generator>::globalNumCell(generator),
+                BilinearMeshGenerator<Generator>::periodic(generator) );
 
     // Create mesh.
     auto mesh = createCurvilinearMesh( mapping, base_halo, extended_halo,
@@ -351,7 +351,7 @@ auto createBilinearMesh(
     manager->add( FieldLocation::Node{}, Field::PhysicalPosition{} );
 
     // Assign coordinates to the mapping.
-    mapping.setLocalNodeCoordinates(
+    mapping->setLocalNodeCoordinates(
         manager->view( FieldLocation::Node{}, Field::PhysicalPosition{} ) );
 
     // Generate the coordinates.

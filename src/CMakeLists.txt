@@ -23,6 +23,7 @@ set(HEADERS
   Picasso_PolyPIC.hpp
   Picasso_Types.hpp
   Picasso_UniformMesh.hpp
+  Picasso_UniformCartesianMeshMapping.hpp
   Picasso_Version.hpp
   )
 
@@ -40,7 +41,7 @@ add_library(picasso ${SOURCES})
 
 target_link_libraries(picasso
   Kokkos::kokkos
-  Kokkos::kokkoskernels
+  kokkoskernels
   MPI::MPI_CXX
   Cabana::cabanacore
   Cabana::Cajita

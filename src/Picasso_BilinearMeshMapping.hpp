@@ -76,6 +76,7 @@ template <class MemorySpace>
 class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
 {
   public:
+    using memory_space = MemorySpace;
     using mesh_mapping = BilinearMeshMapping<MemorySpace,3>;
     static constexpr std::size_t num_space_dim = 3;
 
@@ -192,6 +193,7 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
 template <class MemorySpace>
 struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
 {
+    using memory_space = MemorySpace;
     using mesh_mapping = BilinearMeshMapping<MemorySpace,2>;
     static constexpr std::size_t num_space_dim = 2;
 
@@ -361,10 +363,10 @@ auto createBilinearMesh(
 }
 
 //---------------------------------------------------------------------------//
-// Uniform Cartesian bilinear mesh generator. Generate a bilinear mesh
+// Uniform bilinear mesh generator. Generate a uniform bilinear mesh
 // starting with a global bounding box and a uniform grid.
 template<std::size_t NumSpaceDim>
-struct UniformCartesianBilinearMeshGenerator
+struct UniformBilinearMeshGenerator
 {
     // Uniform cell size.
     double cell_size;
@@ -377,7 +379,7 @@ struct UniformCartesianBilinearMeshGenerator
 };
 
 template<std::size_t NumSpaceDim>
-struct BilinearMeshGenerator<UniformCartesianBilinearMeshGenerator<NumSpaceDim>>
+struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
 {
     static constexpr std::size_t num_space_dim = Generator::num_space_dim;
 
@@ -415,15 +417,12 @@ struct BilinearMeshGenerator<UniformCartesianBilinearMeshGenerator<NumSpaceDim>>
 
         // Create owned nodes.
         auto local_grid = coords.layout()->localGrid();
-        auto l2g = Cajita::createL2G( *local_grid, Cajita::Node() );
         auto local_space = local_grid->indexSpace(
             Cajita::Own(), Cajita::Node(), Cajita::Local() );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
                 for ( int k = local_space.min(Dim::K); k < local_space.max(Dim::K); ++k )
                 {
-                    int gi, gj, gk;
-                    l2g( i, j, k, gi, gj, gk );
                     node_view( i, j, k, 0 ) =
                         local_mesh.lowCorner( Cajita::Ghost(), 0 ) +
                         i * cell_size[0];
@@ -452,14 +451,11 @@ struct BilinearMeshGenerator<UniformCartesianBilinearMeshGenerator<NumSpaceDim>>
 
         // Create owned nodes.
         auto local_grid = coords.layout()->localGrid();
-        auto l2g = Cajita::createL2G( *local_grid, Cajita::Node() );
         auto local_space = local_grid->indexSpace(
             Cajita::Own(), Cajita::Node(), Cajita::Local() );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
             {
-                int gi, gj;
-                l2g( i, j, gi, gj );
                 node_view( i, j,  0 ) =
                     local_mesh.lowCorner( Cajita::Ghost(), 0 ) +
                     i * cell_size[0];

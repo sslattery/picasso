@@ -24,6 +24,7 @@
 #include <mpi.h>
 
 #include <type_traits>
+#include <limits>
 
 namespace Picasso
 {
@@ -328,8 +329,7 @@ template<class MemorySpace, class Generator, std::size_t NumSpaceDim>
 auto createBilinearMesh(
     MemorySpace,
     Generator generator,
-    const int base_halo,
-    const int extended_halo,
+    const int halo_width,
     MPI_Comm comm,
     const std::array<int,NumSpaceDim>& ranks_per_dim )
 {
@@ -341,7 +341,7 @@ auto createBilinearMesh(
                 BilinearMeshGenerator<Generator>::periodic(generator) );
 
     // Create mesh.
-    auto mesh = createCurvilinearMesh( mapping, base_halo, extended_halo,
+    auto mesh = createCurvilinearMesh( mapping, halo_width,
                                        comm, ranks_per_dim );
 
     // Create field manager.
@@ -391,9 +391,23 @@ struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
         for ( std::size_t d = 0; d < num_space_dim; ++d )
         {
             global_num_cell[d] =
-                ( generator.global_bounding_box[2*d+1] -
-                  generator.global_bounding_box[2*d] ) / generator.cell_size;
+                ( generator.global_bounding_box[num_space_dim + d] -
+                  generator.global_bounding_box[d] ) / generator.cell_size;
         }
+
+        // Because the mesh is uniform check that the domain is evenly
+        // divisible by the cell size in each dimension within round-off
+        // error. This will let us do cheaper math for particle location.
+        for ( std::size_t d = 0; d < num_space_dim; ++d )
+        {
+            double extent = global_num_cell[d] * cell_size;
+            if ( std::abs( extent - ( generator.global_bounding_box[num_space_dim + d] -
+                                      generator.global_bounding_box[d] ) ) >
+                 std::numeric_limits<float>::epsilon() )
+                throw std::logic_error(
+                    "Extent not evenly divisible by uniform cell size" );
+        }
+
         return global_num_cell;
     }
 

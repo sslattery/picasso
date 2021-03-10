@@ -25,6 +25,7 @@
 
 #include <type_traits>
 #include <cmath>
+#include <limits>
 
 namespace Picasso
 {
@@ -121,6 +122,7 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
             reference_coords(d) =
                 (physical_coords(d) - mapping._local_min[d]) *
                 mapping._inv_cell_size;
+        return true;
     }
 };
 
@@ -134,8 +136,7 @@ auto createUniformCartesianMesh(
     const double cell_size,
     const Kokkos::Array<double,2*NumSpaceDim>& global_bounding_box,
     const Kokkos::Array<bool,NumSpaceDim>& periodic,
-    const int base_halo,
-    const int extended_halo,
+    const int halo_width,
     MPI_Comm comm,
     const std::array<int,NumSpaceDim>& ranks_per_dim )
 {
@@ -150,24 +151,40 @@ auto createUniformCartesianMesh(
     for ( std::size_t d = 0; d < NumSpaceDim; ++d )
     {
         mapping->_global_num_cell[d] =
-            ( global_bounding_box[2*d+1] -
-              global_bounding_box[2*d] ) / cell_size;
+            std::rint( ( global_bounding_box[NumSpaceDim + d] -
+                         global_bounding_box[d] ) / cell_size );
+    }
+
+    // Because the mesh is uniform check that the domain is evenly
+    // divisible by the cell size in each dimension within round-off
+    // error. This will let us do cheaper math for particle location.
+    for ( std::size_t d = 0; d < NumSpaceDim; ++d )
+    {
+        double extent = mapping->_global_num_cell[d] * cell_size;
+        if ( std::abs( extent - ( global_bounding_box[NumSpaceDim + d] -
+                                  global_bounding_box[d] ) ) >
+             std::numeric_limits<float>::epsilon() )
+            throw std::logic_error(
+                "Extent not evenly divisible by uniform cell size" );
     }
 
     // Create mesh.
-    auto mesh = createCurvilinearMesh( mapping, base_halo, extended_halo,
+    auto mesh = createCurvilinearMesh( mapping, halo_width,
                                        comm, ranks_per_dim );
 
     // Create field manager.
     auto manager = createFieldManager( mesh );
 
     // Get the local bounds.
-    auto local_mesh =
-        Cajita::createLocalMesh<Kokkos::HostSpace>( *(mesh->localGrid()) );
+    auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *(mesh->localGrid()) );
     for ( std::size_t d = 0; d < NumSpaceDim; ++d )
     {
-        mapping->_local_min[d] = local_mesh.lowCorner( Cajita::Ghost(), d );
-        mapping->_local_max[d] = local_mesh.highCorner( Cajita::Ghost(), d );
+        mapping->_local_min[d] =
+            global_bounding_box[d] +
+            local_mesh.lowCorner( Cajita::Ghost(), d ) * cell_size;
+        mapping->_local_max[d] =
+            global_bounding_box[d] +
+            local_mesh.highCorner( Cajita::Ghost(), d ) * cell_size;
     }
 
     return manager;

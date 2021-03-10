@@ -191,27 +191,18 @@ class CurvilinearMesh
     /*!
       \brief Constructor.
       \param mapping The mapping with which to build the curvilinear mesh.
-      \param base_halo The number of cells required for grid-based halo
+      \param halo_width The maximum number of cells required for grid halo
       operations.
-      \param extended_halo The number of cells to use for extended halo
-      (e.g. particle) operations. The extended halo and the base halo can be
-      the same. If the extended halo is smaller than the base halo the base
-      halo will be used.
       \param comm The MPI comm to use for the mesh.
       \param ranks_per_dim The number of MPI ranks to assign to each logical
       dimension in the partitioning.
     */
     CurvilinearMesh( const std::shared_ptr<Mapping>& mapping,
-                     const int base_halo,
-                     const int extended_halo,
+                     const int halo_width,
                      MPI_Comm comm,
                      const std::array<int,num_space_dim>& ranks_per_dim )
         : _mapping( mapping )
-        , _base_halo( base_halo )
     {
-        // Extended halo must be at least as big as the base halo.
-        _extended_halo = std::max( base_halo, extended_halo );
-
         // The logical grid is uniform with unit cell size.
         std::array<int, num_space_dim> global_num_cell;
         std::array<bool, num_space_dim> periodic;
@@ -227,18 +218,6 @@ class CurvilinearMesh
             global_high_corner[d] = static_cast<double>(global_num_cell[d]);
         }
 
-        // For dimensions that are not periodic we pad by the baso halo
-        // cell width to allow for projections outside of the domain.
-        for ( std::size_t d = 0; d < num_space_dim; ++d )
-        {
-            if ( !periodic[d] )
-            {
-                global_num_cell[d] += 2 * _base_halo;
-                global_low_corner[d] -= _base_halo;
-                global_high_corner[d] += _base_halo;
-            }
-        }
-
         // Create the global mesh.
         auto global_mesh = Cajita::createUniformGlobalMesh(
             global_low_corner, global_high_corner, global_num_cell );
@@ -249,14 +228,8 @@ class CurvilinearMesh
             Cajita::ManualBlockPartitioner<num_space_dim>(ranks_per_dim) );
 
         // Build the local grid.
-        _local_grid = Cajita::createLocalGrid( global_grid, _extended_halo );
+        _local_grid = Cajita::createLocalGrid( global_grid, halo_width );
     }
-
-    // Get the number of cells in the base halo.
-    int baseHalo() const { return _base_halo; }
-
-    // Get the number of cells in the extended halo.
-    int extendedHalo() const { return _extended_halo; }
 
     // Get the mesh mapping.
     const mesh_mapping& mapping() const { return *_mapping; }
@@ -266,8 +239,6 @@ class CurvilinearMesh
 
   public:
     std::shared_ptr<mesh_mapping> _mapping;
-    int _base_halo;
-    int _extended_halo;
     std::shared_ptr<local_grid> _local_grid;
 };
 
@@ -294,13 +265,12 @@ struct is_curvilinear_mesh
 template<class Mapping>
 auto createCurvilinearMesh(
     const std::shared_ptr<Mapping>& mapping,
-    const int base_halo,
-    const int extended_halo,
+    const int halo_width,
     MPI_Comm comm,
     const std::array<int,Mapping::num_space_dim>& ranks_per_dim )
 {
     return std::make_shared<CurvilinearMesh<Mapping>>(
-        mapping, base_halo, extended_halo, comm, ranks_per_dim );
+        mapping, halo_width, comm, ranks_per_dim );
 }
 
 //---------------------------------------------------------------------------//

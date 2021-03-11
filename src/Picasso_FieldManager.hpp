@@ -96,7 +96,7 @@ class FieldManager
         handle->halo =
             Cajita::createHalo<typename Field::PhysicalPosition::value_type,
                                typename Mesh::memory_space>(
-                *( handle->array->layout() ), Cajita::FullHaloPattern() );
+                                   *( handle->array->layout() ), Cajita::NodeHaloPattern<Mesh::num_space_dim>() );
         _fields.emplace( key, handle );
     }
 
@@ -166,7 +166,7 @@ class FieldManager
         handle->array = createArray( *_mesh, location, tag );
         handle->halo = Cajita::createHalo<typename FieldTag::value_type,
                                           typename Mesh::memory_space>(
-            *( handle->array->layout() ), Cajita::FullHaloPattern() );
+                                              *( handle->array->layout() ), Cajita::HaloPattern<Mesh::num_space_dim>() );
         return handle;
     }
 

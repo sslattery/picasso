@@ -47,9 +47,9 @@ struct BilinearMeshMapping
         CurvilinearMesh<BilinearMeshMapping<MemorySpace,NumSpaceDim>>;
 
     using coord_view_type = std::conditional_t<
-        3 == num_space_dim, Kokkos::View<value_type****, MemorySpace>,
+        3 == num_space_dim, Kokkos::View<double****, MemorySpace>,
         std::conditional_t<2 == num_space_dim,
-                           Kokkos::View<value_type***, MemorySpace>, void>>;
+                           Kokkos::View<double***, MemorySpace>, void>>;
 
     // Construct a bilinear mapping.
     BilinearMeshMapping( const Kokkos::Array<int,NumSpaceDim>& global_num_cell,
@@ -130,9 +130,9 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
         const mesh_mapping& mapping,
-        const ReferenceCoords& local_ref_coords,
+        const ReferenceCoords& reference_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian,
-        typename ReferenceCoordinates::value_type& jacobian_det,
+        typename ReferenceCoords::value_type& jacobian_det,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian_inv )
     {
         using value_type = typename ReferenceCoords::value_type;
@@ -157,11 +157,11 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
                     {
                         jacobian(d,Dim::I) +=
                             g[Dim::I][ni] * w[Dim::J][nj] * w[Dim::K][nk] *
-                            mapping._local_node(i+ni,j+nj,k+nk,d);
+                            mapping._local_node_coords(i+ni,j+nj,k+nk,d);
 
                         jacobian(d,Dim::J) +=
                             w[Dim::I][ni] * g[Dim::J][nj] * w[Dim::K][nk] *
-                            mapping._local_node(i+ni,j+nj,k+nk,d);
+                            mapping._local_node_coords(i+ni,j+nj,k+nk,d);
 
                         jacobian(d,Dim::K) +=
                             w[Dim::I][ni] * w[Dim::J][nj] * g[Dim::K][nk] *
@@ -244,9 +244,9 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
         const mesh_mapping& mapping,
-        const ReferenceCoords& local_ref_coords,
+        const ReferenceCoords& reference_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,2,2>& jacobian,
-        typename ReferenceCoordinates::value_type& jacobian_det,
+        typename ReferenceCoords::value_type& jacobian_det,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,2,2>& jacobian_inv )
     {
         using value_type = typename ReferenceCoords::value_type;
@@ -381,11 +381,13 @@ struct UniformBilinearMeshGenerator
 template<std::size_t NumSpaceDim>
 struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
 {
-    static constexpr std::size_t num_space_dim = Generator::num_space_dim;
+    using Generator = UniformBilinearMeshGenerator<NumSpaceDim>;
+
+    static constexpr std::size_t num_space_dim = NumSpaceDim;
 
     // Get the global number of cell in each logical dimension of the mesh.
     static Kokkos::Array<int,num_space_dim>
-    globalNumCell( const Generator& generator );
+    globalNumCell( const Generator& generator )
     {
         Kokkos::Array<int,num_space_dim> global_num_cell;
         for ( std::size_t d = 0; d < num_space_dim; ++d )
@@ -400,7 +402,7 @@ struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
         // error. This will let us do cheaper math for particle location.
         for ( std::size_t d = 0; d < num_space_dim; ++d )
         {
-            double extent = global_num_cell[d] * cell_size;
+            double extent = global_num_cell[d] * generator.cell_size;
             if ( std::abs( extent - ( generator.global_bounding_box[num_space_dim + d] -
                                       generator.global_bounding_box[d] ) ) >
                  std::numeric_limits<float>::epsilon() )
@@ -420,66 +422,68 @@ struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
 
     // Given the local grid compute populate the local node coordinates. 3D
     // Specialization.
-    template<class NodeCoordinateArray, std::size_t NSD = 3>
+    template<class NodeCoordinateArray, std::size_t NSD = NumSpaceDim>
     static std::enable_if_t<3==NSD,void>
     createLocalNodeCoordinates( const Generator& generator,
                                 const NodeCoordinateArray& coords )
     {
         // Create nodes on the host.
-        auto nodes = Kokkos::create_mirror_view(
+        auto coords_h = Kokkos::create_mirror_view(
             Kokkos::HostSpace(), coords.view() );
 
         // Create owned nodes.
         auto local_grid = coords.layout()->localGrid();
         auto local_space = local_grid->indexSpace(
             Cajita::Own(), Cajita::Node(), Cajita::Local() );
+        auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *local_grid );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
                 for ( int k = local_space.min(Dim::K); k < local_space.max(Dim::K); ++k )
                 {
-                    node_view( i, j, k, 0 ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), 0 ) +
-                        i * cell_size[0];
-                    node_view( i, j, k, 1 ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), 1 ) +
-                        j * cell_size[1];
-                    node_view( i, j, k, 2 ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), 2 ) +
-                        k * cell_size[2];
+                    coords_h( i, j, k, Dim::I ) =
+                        local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
+                        i * generator.cell_size;
+                    coords_h( i, j, k, Dim::J ) =
+                        local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
+                        j * generator.cell_size;
+                    coords_h( i, j, k, Dim::K ) =
+                        local_mesh.lowCorner( Cajita::Ghost(), Dim::K ) +
+                        k * generator.cell_size;
                 }
 
         // Move nodes to device.
-        Kokkos::deep_copy( coords.view(), nodes );
+        Kokkos::deep_copy( coords.view(), coords_h );
     }
 
     // Given the local grid compute populate the local node coordinates. 2D
     // Specialization.
-    template<class NodeCoordinateArray, std::size_t NSD = 2>
+    template<class NodeCoordinateArray, std::size_t NSD = NumSpaceDim>
     static std::enable_if_t<2==NSD,void>
     createLocalNodeCoordinates( const Generator& generator,
                                 const NodeCoordinateArray& coords )
     {
         // Create nodes on the host.
-        auto nodes = Kokkos::create_mirror_view(
+        auto coords_h = Kokkos::create_mirror_view(
             Kokkos::HostSpace(), coords.view() );
 
         // Create owned nodes.
         auto local_grid = coords.layout()->localGrid();
         auto local_space = local_grid->indexSpace(
             Cajita::Own(), Cajita::Node(), Cajita::Local() );
+        auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *local_grid );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
             {
-                node_view( i, j,  0 ) =
-                    local_mesh.lowCorner( Cajita::Ghost(), 0 ) +
-                    i * cell_size[0];
-                node_view( i, j,  1 ) =
-                    local_mesh.lowCorner( Cajita::Ghost(), 1 ) +
-                    j * cell_size[1];
+                coords_h( i, j,  Dim::I ) =
+                    local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
+                    i * generator.cell_size;
+                coords_h( i, j,  Dim::J ) =
+                    local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
+                    j * generator.cell_size;
             }
 
         // Move nodes to device.
-        Kokkos::deep_copy( coords.view(), nodes );
+        Kokkos::deep_copy( coords.view(), coords_h );
     }
 };
 

@@ -160,8 +160,8 @@ Picasso_add_tests(MPI NAMES
   ParticleList
   ParticleInit
   ParticleCommunication
-  # BilinearMeshMapping
   UniformCartesianMeshMapping
+  BilinearMeshMapping
   UniformMesh
   AdaptiveMesh
   FieldManager

@@ -46,8 +46,7 @@ struct UniformCartesianMeshMapping
     double _inv_cell_measure;
     Kokkos::Array<int,NumSpaceDim> _global_num_cell;
     Kokkos::Array<bool,NumSpaceDim> _periodic;
-    Kokkos::Array<double,NumSpaceDim> _local_min;
-    Kokkos::Array<double,NumSpaceDim> _local_max;
+    Kokkos::Array<double,2*NumSpaceDim> _global_bounding_box;
 };
 
 //---------------------------------------------------------------------------//
@@ -73,8 +72,8 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
         return mapping._periodic[dim];
     }
 
-    // Forward mapping. Given coordinates in the reference frame compute the
-    // coordinates in the physical frame.
+    // Forward mapping. Given coordinates in the reference frame
+    // compute the coordinates in the physical frame.
     template<class ReferenceCoords, class PhysicalCoords>
     static KOKKOS_INLINE_FUNCTION void
     mapToPhysicalFrame( const mesh_mapping& mapping,
@@ -82,11 +81,11 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
                         PhysicalCoords& physical_coords )
     {
         for ( std::size_t d = 0; d < num_space_dim; ++d )
-            physical_coords =
-                mapping._local_min[d] + reference_coords(d) * mapping._cell_size;
+            physical_coords(d) =
+                mapping._global_bounding_box[d] + reference_coords(d) * mapping._cell_size;
     }
 
-    // Given coordinates in the local reference frame compute the grid
+    // Given coordinates in the reference frame compute the grid
     // transformation metrics. This is the of jacobian of the forward mapping,
     // its determinant, and inverse.
     template<class ReferenceCoords>
@@ -94,9 +93,9 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
     transformationMetrics(
         const mesh_mapping& mapping,
         const ReferenceCoords&,
-        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian,
+        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,NumSpaceDim,NumSpaceDim>& jacobian,
         typename ReferenceCoords::value_type& jacobian_det,
-        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,3,3>& jacobian_inv )
+        LinearAlgebra::Matrix<typename ReferenceCoords::value_type,NumSpaceDim,NumSpaceDim>& jacobian_inv )
     {
         for ( std::size_t i = 0; i < num_space_dim; ++i )
             for ( std::size_t j = 0; j < num_space_dim; ++j )
@@ -110,7 +109,7 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
     }
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame. Return whether or not the
+    // coordinates in the reference frame. Return whether or not the
     // mapping succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
@@ -118,9 +117,9 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
                          const PhysicalCoords& physical_coords,
                          ReferenceCoords& reference_coords )
     {
-        for ( std::size_t d = 0; d < 3; ++d )
+        for ( std::size_t d = 0; d < num_space_dim; ++d )
             reference_coords(d) =
-                (physical_coords(d) - mapping._local_min[d]) *
+                (physical_coords(d) - mapping._global_bounding_box[d]) *
                 mapping._inv_cell_size;
         return true;
     }
@@ -128,7 +127,7 @@ class CurvilinearMeshMapping<UniformCartesianMeshMapping<MemorySpace,NumSpaceDim
 
 //---------------------------------------------------------------------------//
 // Create a uniform mesh. Creates a mapping, a mesh, a field manager, a
-// coordinate array in the field manager, and assigns the local mesh bounds to
+// coordinate array in the field manager, and assigns the global mesh bounds to
 // the mapping. A field manager containing the mesh is returned.
 template<class MemorySpace, std::size_t NumSpaceDim>
 auto createUniformCartesianMesh(
@@ -148,6 +147,7 @@ auto createUniformCartesianMesh(
     mapping->_cell_measure = pow( cell_size, NumSpaceDim );
     mapping->_inv_cell_measure = 1.0 / mapping->_cell_measure;
     mapping->_periodic = periodic;
+    mapping->_global_bounding_box = global_bounding_box;
     for ( std::size_t d = 0; d < NumSpaceDim; ++d )
     {
         mapping->_global_num_cell[d] =
@@ -174,19 +174,6 @@ auto createUniformCartesianMesh(
 
     // Create field manager.
     auto manager = createFieldManager( mesh );
-
-    // Get the local bounds.
-    auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *(mesh->localGrid()) );
-    for ( std::size_t d = 0; d < NumSpaceDim; ++d )
-    {
-        mapping->_local_min[d] =
-            global_bounding_box[d] +
-            local_mesh.lowCorner( Cajita::Ghost(), d ) * cell_size;
-        mapping->_local_max[d] =
-            global_bounding_box[d] +
-            local_mesh.highCorner( Cajita::Ghost(), d ) * cell_size;
-    }
-
     return manager;
 }
 

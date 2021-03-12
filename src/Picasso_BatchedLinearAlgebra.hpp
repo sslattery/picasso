@@ -1415,11 +1415,11 @@ operator/( const ExpressionX& x, const typename ExpressionX::value_type s )
 // 2x2 specialization
 template <class Expression>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<Expression>::value &&
-                                  Expression::extent_0 == 2 &&
-                                  Expression::extent_1 == 2,
-                              typename Expression::value_type>
-    operator!( const Expression& a )
+typename std::enable_if_t<is_matrix<Expression>::value &&
+                          Expression::extent_0 == 2 &&
+                          Expression::extent_1 == 2,
+                          typename Expression::value_type>
+operator!( const Expression& a )
 {
     return a( 0, 0 ) * a( 1, 1 ) - a( 0, 1 ) * a( 1, 0 );
 }
@@ -1428,18 +1428,18 @@ KOKKOS_INLINE_FUNCTION
 // 3x3 specialization
 template <class Expression>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<Expression>::value &&
-                                  Expression::extent_0 == 3 &&
-                                  Expression::extent_1 == 3,
-                              typename Expression::value_type>
-    operator!( const Expression& a )
+typename std::enable_if_t<is_matrix<Expression>::value &&
+                          Expression::extent_0 == 3 &&
+                          Expression::extent_1 == 3,
+                          typename Expression::value_type>
+operator!( const Expression& a )
 {
     return a( 0, 0 ) * a( 1, 1 ) * a( 2, 2 ) +
-           a( 0, 1 ) * a( 1, 2 ) * a( 2, 0 ) +
-           a( 0, 2 ) * a( 1, 0 ) * a( 2, 1 ) -
-           a( 0, 2 ) * a( 1, 1 ) * a( 2, 0 ) -
-           a( 0, 1 ) * a( 1, 0 ) * a( 2, 2 ) -
-           a( 0, 0 ) * a( 1, 2 ) * a( 2, 1 );
+        a( 0, 1 ) * a( 1, 2 ) * a( 2, 0 ) +
+        a( 0, 2 ) * a( 1, 0 ) * a( 2, 1 ) -
+        a( 0, 2 ) * a( 1, 1 ) * a( 2, 0 ) -
+        a( 0, 1 ) * a( 1, 0 ) * a( 2, 2 ) -
+        a( 0, 0 ) * a( 1, 2 ) * a( 2, 1 );
 }
 
 //---------------------------------------------------------------------------//
@@ -1447,9 +1447,9 @@ KOKKOS_INLINE_FUNCTION
 //---------------------------------------------------------------------------//
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value,
-                              typename ExpressionA::copy_type>
-    LU( const ExpressionA& a )
+typename std::enable_if_t<is_matrix<ExpressionA>::value,
+                          typename ExpressionA::copy_type>
+LU( const ExpressionA& a )
 {
     typename ExpressionA::copy_type lu = a;
     KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke( lu );
@@ -1461,9 +1461,9 @@ KOKKOS_INLINE_FUNCTION
 //---------------------------------------------------------------------------//
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value,
-                              typename ExpressionA::value_type>
-    trace( const ExpressionA& a )
+typename std::enable_if_t<is_matrix<ExpressionA>::value,
+                          typename ExpressionA::value_type>
+trace( const ExpressionA& a )
 {
     static_assert( ExpressionA::extent_1 == ExpressionA::extent_0,
                    "matrix must be square" );
@@ -1482,8 +1482,8 @@ KOKKOS_INLINE_FUNCTION
 //---------------------------------------------------------------------------//
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value, void>
-    identity( ExpressionA& a )
+typename std::enable_if_t<is_matrix<ExpressionA>::value, void>
+identity( ExpressionA& a )
 {
     static_assert( ExpressionA::extent_1 == ExpressionA::extent_0,
                    "matrix must be square" );
@@ -1502,10 +1502,10 @@ KOKKOS_INLINE_FUNCTION
 // 2x2 specialization with determinant given.
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value &&
-                                  ExpressionA::extent_0 == 2 &&
-                                  ExpressionA::extent_1 == 2,
-                              typename ExpressionA::copy_type>
+typename std::enable_if_t<is_matrix<ExpressionA>::value &&
+                          ExpressionA::extent_0 == 2 &&
+                          ExpressionA::extent_1 == 2,
+                          typename ExpressionA::copy_type>
 inverse( const ExpressionA& a, const typename ExpressionA::value_type a_det )
 {
     typename ExpressionA::eval_type a_eval = a;
@@ -1526,11 +1526,11 @@ inverse( const ExpressionA& a, const typename ExpressionA::value_type a_det )
 // 2x2 specialization.
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value &&
-                                  ExpressionA::extent_0 == 2 &&
-                                  ExpressionA::extent_1 == 2,
-                              typename ExpressionA::copy_type>
-    inverse( const ExpressionA& a )
+typename std::enable_if_t<is_matrix<ExpressionA>::value &&
+                          ExpressionA::extent_0 == 2 &&
+                          ExpressionA::extent_1 == 2,
+                          typename ExpressionA::copy_type>
+inverse( const ExpressionA& a )
 {
     typename ExpressionA::eval_type a_eval = a;
     return inverse( a_eval, !a_eval );
@@ -1540,10 +1540,10 @@ KOKKOS_INLINE_FUNCTION
 // 3x3 specialization with determinant given.
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value &&
-                                  ExpressionA::extent_0 == 3 &&
-                              ExpressionA::extent_1 == 3,
-                              typename ExpressionA::copy_type>
+typename std::enable_if_t<is_matrix<ExpressionA>::value &&
+                          ExpressionA::extent_0 == 3 &&
+                          ExpressionA::extent_1 == 3,
+                          typename ExpressionA::copy_type>
 inverse( const ExpressionA& a, const typename ExpressionA::value_type a_det )
 {
     typename ExpressionA::eval_type a_eval = a;
@@ -1589,11 +1589,11 @@ inverse( const ExpressionA& a, const typename ExpressionA::value_type a_det )
 // 3x3 specialization.
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value &&
-                                  ExpressionA::extent_0 == 3 &&
-                                  ExpressionA::extent_1 == 3,
-                              typename ExpressionA::copy_type>
-    inverse( const ExpressionA& a )
+typename std::enable_if_t<is_matrix<ExpressionA>::value &&
+                          ExpressionA::extent_0 == 3 &&
+                          ExpressionA::extent_1 == 3,
+                          typename ExpressionA::copy_type>
+inverse( const ExpressionA& a )
 {
     typename ExpressionA::eval_type a_eval = a;
     return inverse( a_eval, !a_eval );
@@ -1604,8 +1604,8 @@ KOKKOS_INLINE_FUNCTION
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION typename std::enable_if_t<
     is_matrix<ExpressionA>::value &&
-        !( ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2 ) &&
-        !( ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3 ),
+    !( ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2 ) &&
+    !( ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3 ),
     typename ExpressionA::copy_type>
 inverse( const ExpressionA& a )
 {
@@ -1623,8 +1623,8 @@ inverse( const ExpressionA& a )
 template <class ExpressionA, class ExpressionB>
 KOKKOS_INLINE_FUNCTION typename std::enable_if_t<
     is_matrix<ExpressionA>::value &&
-        ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
-        ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2,
+    ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
+    ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2,
     typename ExpressionB::copy_type>
 operator^( const ExpressionA& a, const ExpressionB& b )
 {
@@ -1636,8 +1636,8 @@ operator^( const ExpressionA& a, const ExpressionB& b )
 template <class ExpressionA, class ExpressionB>
 KOKKOS_INLINE_FUNCTION typename std::enable_if_t<
     is_matrix<ExpressionA>::value &&
-        ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
-        ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3,
+    ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
+    ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3,
     typename ExpressionB::copy_type>
 operator^( const ExpressionA& a, const ExpressionB& b )
 {
@@ -1649,14 +1649,14 @@ operator^( const ExpressionA& a, const ExpressionB& b )
 template <class ExpressionA, class ExpressionB>
 KOKKOS_INLINE_FUNCTION typename std::enable_if_t<
     is_matrix<ExpressionA>::value &&
-        ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
-        !( ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2 ) &&
-        !( ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3 ),
+    ( is_matrix<ExpressionB>::value || is_vector<ExpressionB>::value ) &&
+    !( ExpressionA::extent_0 == 2 && ExpressionA::extent_1 == 2 ) &&
+    !( ExpressionA::extent_0 == 3 && ExpressionA::extent_1 == 3 ),
     typename ExpressionB::copy_type>
 operator^( const ExpressionA& a, const ExpressionB& b )
 {
     static_assert( std::is_same<typename ExpressionA::value_type,
-                                typename ExpressionB::value_type>::value,
+                   typename ExpressionB::value_type>::value,
                    "value_type must be the same" );
     static_assert( ExpressionA::extent_1 == ExpressionB::extent_0,
                    "Inner extent must match" );
@@ -1673,16 +1673,16 @@ operator^( const ExpressionA& a, const ExpressionB& b )
 //---------------------------------------------------------------------------//
 template <class ExpressionA>
 KOKKOS_INLINE_FUNCTION
-    typename std::enable_if_t<is_matrix<ExpressionA>::value,
-                              typename ExpressionA::copy_type>
-    eigendecomposition(
-        const ExpressionA& a,
-        Vector<typename ExpressionA::value_type, ExpressionA::extent_0>& e_real,
-        Vector<typename ExpressionA::value_type, ExpressionA::extent_0>& e_imag,
-        Matrix<typename ExpressionA::value_type, ExpressionA::extent_0,
-               ExpressionA::extent_0>& u_left,
-        Matrix<typename ExpressionA::value_type, ExpressionA::extent_0,
-               ExpressionA::extent_0>& u_right )
+typename std::enable_if_t<is_matrix<ExpressionA>::value,
+                          typename ExpressionA::copy_type>
+eigendecomposition(
+    const ExpressionA& a,
+    Vector<typename ExpressionA::value_type, ExpressionA::extent_0>& e_real,
+    Vector<typename ExpressionA::value_type, ExpressionA::extent_0>& e_imag,
+    Matrix<typename ExpressionA::value_type, ExpressionA::extent_0,
+    ExpressionA::extent_0>& u_left,
+    Matrix<typename ExpressionA::value_type, ExpressionA::extent_0,
+    ExpressionA::extent_0>& u_right )
 {
     static_assert( ExpressionA::extent_0 == ExpressionA::extent_1,
                    "Matrix must be square" );

@@ -58,7 +58,7 @@ struct BilinearMeshMapping
         , _periodic( periodic )
     {}
 
-    // Set the local node coordinates.
+    // Set the local node coordinates including the halo region.
     void setLocalNodeCoordinates( const coord_view_type& local_node_coords )
     {
         _local_node_coords = local_node_coords;
@@ -66,6 +66,7 @@ struct BilinearMeshMapping
 
     Kokkos::Array<int,NumSpaceDim> _global_num_cell;
     Kokkos::Array<bool,NumSpaceDim> _periodic;
+    Kokkos::Array<int,NumSpaceDim> _global_offset;
     coord_view_type _local_node_coords;
 };
 
@@ -102,13 +103,17 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     {
         using value_type = typename ReferenceCoords::value_type;
 
-        int i = static_cast<int>( reference_coords(Dim::I) );
-        int j = static_cast<int>( reference_coords(Dim::J) );
-        int k = static_cast<int>( reference_coords(Dim::K) );
+        int ri = static_cast<int>( reference_coords(Dim::I) );
+        int rj = static_cast<int>( reference_coords(Dim::J) );
+        int rk = static_cast<int>( reference_coords(Dim::K) );
 
-        value_type xi = reference_coords(Dim::I) - i;
-        value_type xj = reference_coords(Dim::J) - j;
-        value_type xk = reference_coords(Dim::K) - k;
+        int i = ri - mapping._global_offset[Dim::I];
+        int j = rj - mapping._global_offset[Dim::J];
+        int k = rk - mapping._global_offset[Dim::K];
+
+        value_type xi = reference_coords(Dim::I) - ri;
+        value_type xj = reference_coords(Dim::J) - rj;
+        value_type xk = reference_coords(Dim::K) - rk;
 
         value_type w[3][2] = { {1.0 - xi, xi}, {1.0 - xj, xj}, {1.0 - xk, xk} };
 
@@ -123,7 +128,7 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
                             mapping._local_node_coords(i+ni,j+nj,k+nk,d);
     }
 
-    // Given coordinates in the local reference frame compute the grid
+    // Given coordinates in the reference frame compute the grid
     // transformation metrics. This is the of jacobian of the forward mapping,
     // its determinant, and inverse.
     template<class ReferenceCoords>
@@ -137,13 +142,17 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     {
         using value_type = typename ReferenceCoords::value_type;
 
-        int i = static_cast<int>( reference_coords(Dim::I) );
-        int j = static_cast<int>( reference_coords(Dim::J) );
-        int k = static_cast<int>( reference_coords(Dim::K) );
+        int ri = static_cast<int>( reference_coords(Dim::I) );
+        int rj = static_cast<int>( reference_coords(Dim::J) );
+        int rk = static_cast<int>( reference_coords(Dim::K) );
 
-        value_type xi = reference_coords(Dim::I) - i;
-        value_type xj = reference_coords(Dim::J) - j;
-        value_type xk = reference_coords(Dim::K) - k;
+        int i = ri - mapping._global_offset[Dim::I];
+        int j = rj - mapping._global_offset[Dim::J];
+        int k = rk - mapping._global_offset[Dim::K];
+
+        value_type xi = reference_coords(Dim::I) - ri;
+        value_type xj = reference_coords(Dim::J) - rj;
+        value_type xk = reference_coords(Dim::K) - rk;
 
         value_type w[3][2] = { {1.0 - xi, xi}, {1.0 - xj, xj}, {1.0 - xk, xk} };
         value_type g[3][2] = { {-1.0,1.0}, {-1.0,1.0}, {-1.0,1.0} };
@@ -174,8 +183,8 @@ class CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,3>>
     }
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame. Return whether or not the
-    // mapping succeeded.
+    // coordinates in the reference frame. Return whether or not the mapping
+    // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const mesh_mapping& mapping,
@@ -219,11 +228,14 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     {
         using value_type = typename ReferenceCoords::value_type;
 
-        int i = static_cast<int>( reference_coords(Dim::I) );
-        int j = static_cast<int>( reference_coords(Dim::J) );
+        int ri = static_cast<int>( reference_coords(Dim::I) );
+        int rj = static_cast<int>( reference_coords(Dim::J) );
 
-        value_type xi = reference_coords(Dim::I) - i;
-        value_type xj = reference_coords(Dim::J) - j;
+        int i = ri - mapping._global_offset[Dim::I];
+        int j = rj - mapping._global_offset[Dim::J];
+
+        value_type xi = reference_coords(Dim::I) - ri;
+        value_type xj = reference_coords(Dim::J) - rj;
 
         value_type w[2][2] = { {1.0 - xi, xi}, {1.0 - xj, xj} };
 
@@ -237,7 +249,7 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
                         mapping._local_node_coords(i+ni,j+nj,d);
     }
 
-    // Given coordinates in the local reference frame compute the grid
+    // Given coordinates in the reference frame compute the grid
     // transformation metrics. This is the of jacobian of the forward mapping,
     // its determinant, and inverse.
     template<class ReferenceCoords>
@@ -251,11 +263,14 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     {
         using value_type = typename ReferenceCoords::value_type;
 
-        int i = static_cast<int>( reference_coords(Dim::I) );
-        int j = static_cast<int>( reference_coords(Dim::J) );
+        int ri = static_cast<int>( reference_coords(Dim::I) );
+        int rj = static_cast<int>( reference_coords(Dim::J) );
 
-        value_type xi = reference_coords(Dim::I) - i;
-        value_type xj = reference_coords(Dim::J) - j;
+        int i = ri - mapping._global_offset[Dim::I];
+        int j = rj - mapping._global_offset[Dim::J];
+
+        value_type xi = reference_coords(Dim::I) - ri;
+        value_type xj = reference_coords(Dim::J) - rj;
 
         value_type w[2][2] = { {1.0 - xi, xi}, {1.0 - xj, xj} };
         value_type g[2][2] = { {-1.0,1.0}, {-1.0,1.0} };
@@ -281,8 +296,8 @@ struct CurvilinearMeshMapping<BilinearMeshMapping<MemorySpace,2>>
     }
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame. Return whether or not the
-    // mapping succeeded.
+    // coordinates in the reference frame. Return whether or not the mapping
+    // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const mesh_mapping& mapping,
@@ -343,6 +358,12 @@ auto createBilinearMesh(
     // Create mesh.
     auto mesh = createCurvilinearMesh( mapping, halo_width,
                                        comm, ranks_per_dim );
+
+    // Add the global offset of the domain decomposition. Include the halo
+    // width so we know where the ghost logical grid starts.
+    for ( std::size_t d = 0; d < NumSpaceDim; ++d )
+        mapping->_global_offset[d] =
+            mesh->localGrid()->globalGrid().globalOffset( d ) - halo_width;
 
     // Create field manager.
     auto manager = createFieldManager( mesh );
@@ -431,24 +452,27 @@ struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
         auto coords_h = Kokkos::create_mirror_view(
             Kokkos::HostSpace(), coords.view() );
 
-        // Create owned nodes.
+        // Create local nodes.
         auto local_grid = coords.layout()->localGrid();
         auto local_space = local_grid->indexSpace(
-            Cajita::Own(), Cajita::Node(), Cajita::Local() );
+            Cajita::Ghost(), Cajita::Node(), Cajita::Local() );
         auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *local_grid );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
                 for ( int k = local_space.min(Dim::K); k < local_space.max(Dim::K); ++k )
                 {
                     coords_h( i, j, k, Dim::I ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
-                        i * generator.cell_size;
+                        generator.global_bounding_box[Dim::I] +
+                        (local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
+                         i ) * generator.cell_size;
                     coords_h( i, j, k, Dim::J ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
-                        j * generator.cell_size;
+                        generator.global_bounding_box[Dim::J] +
+                        ( local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
+                          j ) * generator.cell_size;
                     coords_h( i, j, k, Dim::K ) =
-                        local_mesh.lowCorner( Cajita::Ghost(), Dim::K ) +
-                        k * generator.cell_size;
+                        generator.global_bounding_box[Dim::K] +
+                        ( local_mesh.lowCorner( Cajita::Ghost(), Dim::K ) +
+                          k ) * generator.cell_size;
                 }
 
         // Move nodes to device.
@@ -469,17 +493,19 @@ struct BilinearMeshGenerator<UniformBilinearMeshGenerator<NumSpaceDim>>
         // Create owned nodes.
         auto local_grid = coords.layout()->localGrid();
         auto local_space = local_grid->indexSpace(
-            Cajita::Own(), Cajita::Node(), Cajita::Local() );
+            Cajita::Ghost(), Cajita::Node(), Cajita::Local() );
         auto local_mesh = Cajita::createLocalMesh<Kokkos::HostSpace>( *local_grid );
         for ( int i = local_space.min(Dim::I); i < local_space.max(Dim::I); ++i )
             for ( int j = local_space.min(Dim::J); j < local_space.max(Dim::J); ++j )
             {
-                coords_h( i, j,  Dim::I ) =
-                    local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
-                    i * generator.cell_size;
-                coords_h( i, j,  Dim::J ) =
-                    local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
-                    j * generator.cell_size;
+                coords_h( i, j, Dim::I ) =
+                    generator.global_bounding_box[Dim::I] +
+                    (local_mesh.lowCorner( Cajita::Ghost(), Dim::I ) +
+                     i ) * generator.cell_size;
+                coords_h( i, j, Dim::J ) =
+                    generator.global_bounding_box[Dim::J] +
+                    ( local_mesh.lowCorner( Cajita::Ghost(), Dim::J ) +
+                      j ) * generator.cell_size;
             }
 
         // Move nodes to device.

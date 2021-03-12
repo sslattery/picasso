@@ -46,7 +46,7 @@ void mappingTest3d()
                                     halo_width,
                                     MPI_COMM_WORLD, ranks_per_dim );
 
-    // Check the mapping.
+    // Check the mapping data.
     auto mapping = manager->mesh().mapping();
     using mapping_type = decltype(mapping);
     EXPECT_EQ( cell_size, mapping._cell_size );
@@ -85,17 +85,25 @@ void mappingTest3d()
     // Check mapping.
     auto owned_cells = local_grid->indexSpace(
         Cajita::Own(), Cajita::Cell(), Cajita::Local() );
+    auto ghosted_cells = local_grid->indexSpace(
+        Cajita::Ghost(), Cajita::Cell(), Cajita::Local() );
     auto local_mesh =
         Cajita::createLocalMesh<TEST_MEMSPACE>( *local_grid );
     Kokkos::View<double***[3],TEST_MEMSPACE> cell_forward_map(
-        "cell_forward_map", owned_cells.extent(Dim::I), owned_cells.extent(Dim::J),
-        owned_cells.extent(Dim::K) );
+        "cell_forward_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J),
+        ghosted_cells.extent(Dim::K) );
     Kokkos::View<double***[3],TEST_MEMSPACE> cell_reverse_map(
-        "cell_reverse_map", owned_cells.extent(Dim::I), owned_cells.extent(Dim::J),
-        owned_cells.extent(Dim::K) );
+        "cell_reverse_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J),
+        ghosted_cells.extent(Dim::K) );
     Kokkos::View<bool***,TEST_MEMSPACE> cell_map_success(
-        "cell_reverse_map", owned_cells.extent(Dim::I), owned_cells.extent(Dim::J),
-        owned_cells.extent(Dim::K) );
+        "cell_reverse_map_success", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J),
+        ghosted_cells.extent(Dim::K) );
+    Kokkos::View<double***[3],TEST_MEMSPACE> default_cell_reverse_map(
+        "default_cell_reverse_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J),
+        ghosted_cells.extent(Dim::K) );
+    Kokkos::View<bool***,TEST_MEMSPACE> default_cell_map_success(
+        "default_cell_reverse_map_success", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J),
+        ghosted_cells.extent(Dim::K) );
     Cajita::grid_parallel_for(
         "check_mapping",
         TEST_EXECSPACE{},
@@ -114,10 +122,18 @@ void mappingTest3d()
             // Map to reference frame.
             LinearAlgebra::VectorView<double,3> ref_coords(
                 &cell_reverse_map(i,j,k,0), cell_reverse_map.stride(3) );
-            ref_coords = { i + 0.1, j + 0.1, k + 0.1 };
+            ref_coords = { cell_coords(Dim::I) - 0.1, cell_coords(Dim::J) - 0.1, cell_coords(Dim::K) - 0.1 };
             cell_map_success(i,j,k) =
                 CurvilinearMeshMapping<mapping_type>::mapToReferenceFrame(
                     mapping, phys_coords, ref_coords );
+
+            // Default map to reference frame.
+            LinearAlgebra::VectorView<double,3> default_ref_coords(
+                &default_cell_reverse_map(i,j,k,0),
+                default_cell_reverse_map.stride(3) );
+            default_cell_map_success(i,j,k) =
+                DefaultCurvilinearMeshMapping<mapping_type>::mapToReferenceFrame(
+                    mapping, phys_coords, default_ref_coords );
         });
 
     auto forward_map_h = Kokkos::create_mirror_view_and_copy(
@@ -126,6 +142,10 @@ void mappingTest3d()
         Kokkos::HostSpace{}, cell_reverse_map );
     auto map_success_h = Kokkos::create_mirror_view_and_copy(
         Kokkos::HostSpace{}, cell_map_success );
+    auto default_reverse_map_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, default_cell_reverse_map );
+    auto default_map_success_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, default_cell_map_success );
 
     auto global_offset_i = local_grid->globalGrid().globalOffset( Dim::I );
     auto global_offset_j = local_grid->globalGrid().globalOffset( Dim::J );
@@ -144,9 +164,15 @@ void mappingTest3d()
 
                 EXPECT_TRUE( map_success_h(i,j,k) );
 
-                EXPECT_FLOAT_EQ( i + 0.5, reverse_map_h(i,j,k,Dim::I) );
-                EXPECT_FLOAT_EQ( j + 0.5, reverse_map_h(i,j,k,Dim::J) );
-                EXPECT_FLOAT_EQ( k + 0.5, reverse_map_h(i,j,k,Dim::K) );
+                EXPECT_FLOAT_EQ( global_offset_i + i - owned_cells.min(Dim::I) + 0.5, reverse_map_h(i,j,k,Dim::I) );
+                EXPECT_FLOAT_EQ( global_offset_j + j - owned_cells.min(Dim::J) + 0.5, reverse_map_h(i,j,k,Dim::J) );
+                EXPECT_FLOAT_EQ( global_offset_k + k - owned_cells.min(Dim::K) + 0.5, reverse_map_h(i,j,k,Dim::K) );
+
+                EXPECT_TRUE( default_map_success_h(i,j,k) );
+
+                EXPECT_FLOAT_EQ( global_offset_i + i - owned_cells.min(Dim::I) + 0.5, default_reverse_map_h(i,j,k,Dim::I) );
+                EXPECT_FLOAT_EQ( global_offset_j + j - owned_cells.min(Dim::J) + 0.5, default_reverse_map_h(i,j,k,Dim::J) );
+                EXPECT_FLOAT_EQ( global_offset_k + k - owned_cells.min(Dim::K) + 0.5, default_reverse_map_h(i,j,k,Dim::K) );
             }
 }
 
@@ -172,8 +198,9 @@ void mappingTest2d()
                                     halo_width,
                                     MPI_COMM_WORLD, ranks_per_dim );
 
-    // Check the mapping.
+    // Check the mapping data.
     auto mapping = manager->mesh().mapping();
+    using mapping_type = decltype(mapping);
     EXPECT_EQ( cell_size, mapping._cell_size );
     EXPECT_EQ( 1.0 / cell_size, mapping._inv_cell_size );
     EXPECT_EQ( cell_size * cell_size, mapping._cell_measure );
@@ -200,7 +227,90 @@ void mappingTest2d()
     EXPECT_TRUE( global_grid.isPeriodic( 0 ) );
     EXPECT_FALSE( global_grid.isPeriodic( 1 ) );
 
-    EXPECT_EQ( manager->mesh().localGrid()->haloCellWidth(), 1 );
+    auto local_grid = manager->mesh().localGrid();
+    EXPECT_EQ( local_grid->haloCellWidth(), 1 );
+
+    // Check mapping.
+    auto owned_cells = local_grid->indexSpace(
+        Cajita::Own(), Cajita::Cell(), Cajita::Local() );
+    auto ghosted_cells = local_grid->indexSpace(
+        Cajita::Ghost(), Cajita::Cell(), Cajita::Local() );
+    auto local_mesh =
+        Cajita::createLocalMesh<TEST_MEMSPACE>( *local_grid );
+    Kokkos::View<double**[2],TEST_MEMSPACE> cell_forward_map(
+        "cell_forward_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J) );
+    Kokkos::View<double**[2],TEST_MEMSPACE> cell_reverse_map(
+        "cell_reverse_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J) );
+    Kokkos::View<bool**,TEST_MEMSPACE> cell_map_success(
+        "cell_reverse_map_success", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J) );
+    Kokkos::View<double**[2],TEST_MEMSPACE> default_cell_reverse_map(
+        "default_cell_reverse_map", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J) );
+    Kokkos::View<bool**,TEST_MEMSPACE> default_cell_map_success(
+        "default_cell_reverse_map_success", ghosted_cells.extent(Dim::I), ghosted_cells.extent(Dim::J) );
+    Cajita::grid_parallel_for(
+        "check_mapping",
+        TEST_EXECSPACE{},
+        owned_cells,
+        KOKKOS_LAMBDA( const int i, const int j ){
+
+            // Map to physical frame.
+            LinearAlgebra::Vector<double,2> cell_coords;
+            int ijk[2] = {i,j};
+            local_mesh.coordinates( Cajita::Cell{}, ijk, cell_coords.data() );
+            LinearAlgebra::VectorView<double,2> phys_coords(
+                &cell_forward_map(i,j,0), cell_forward_map.stride(2) );
+            CurvilinearMeshMapping<mapping_type>::mapToPhysicalFrame(
+                mapping, cell_coords, phys_coords );
+
+            // Map to reference frame.
+            LinearAlgebra::VectorView<double,2> ref_coords(
+                &cell_reverse_map(i,j,0), cell_reverse_map.stride(2) );
+            ref_coords = { cell_coords(Dim::I) - 0.1, cell_coords(Dim::J) - 0.1 };
+            cell_map_success(i,j) =
+                CurvilinearMeshMapping<mapping_type>::mapToReferenceFrame(
+                    mapping, phys_coords, ref_coords );
+
+            // Default map to reference frame.
+            LinearAlgebra::VectorView<double,2> default_ref_coords(
+                &default_cell_reverse_map(i,j,0),
+                default_cell_reverse_map.stride(2) );
+            default_cell_map_success(i,j) =
+                DefaultCurvilinearMeshMapping<mapping_type>::mapToReferenceFrame(
+                    mapping, phys_coords, default_ref_coords );
+        });
+
+    auto forward_map_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, cell_forward_map );
+    auto reverse_map_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, cell_reverse_map );
+    auto map_success_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, cell_map_success );
+    auto default_reverse_map_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, default_cell_reverse_map );
+    auto default_map_success_h = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace{}, default_cell_map_success );
+
+    auto global_offset_i = local_grid->globalGrid().globalOffset( Dim::I );
+    auto global_offset_j = local_grid->globalGrid().globalOffset( Dim::J );
+
+    for ( int i = owned_cells.min(Dim::I); i < owned_cells.max(Dim::I); ++i )
+        for ( int j = owned_cells.min(Dim::J); j < owned_cells.max(Dim::J); ++j )
+        {
+            EXPECT_FLOAT_EQ( cell_size * ( global_offset_i + i - owned_cells.min(Dim::I) + 0.5 ) + global_box[0],
+                             forward_map_h(i,j,Dim::I) );
+            EXPECT_FLOAT_EQ( cell_size * ( global_offset_j + j - owned_cells.min(Dim::J) + 0.5 ) + global_box[1],
+                             forward_map_h(i,j,Dim::J) );
+
+            EXPECT_TRUE( map_success_h(i,j) );
+
+            EXPECT_FLOAT_EQ( global_offset_i + i - owned_cells.min(Dim::I) + 0.5, reverse_map_h(i,j,Dim::I) );
+            EXPECT_FLOAT_EQ( global_offset_j + j - owned_cells.min(Dim::J) + 0.5, reverse_map_h(i,j,Dim::J) );
+
+            EXPECT_TRUE( default_map_success_h(i,j) );
+
+            EXPECT_FLOAT_EQ( global_offset_i + i - owned_cells.min(Dim::I) + 0.5, default_reverse_map_h(i,j,Dim::I) );
+            EXPECT_FLOAT_EQ( global_offset_j + j - owned_cells.min(Dim::J) + 0.5, default_reverse_map_h(i,j,Dim::J) );
+        }
 }
 
 //---------------------------------------------------------------------------//

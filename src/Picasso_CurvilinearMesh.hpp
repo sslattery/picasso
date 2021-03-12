@@ -35,19 +35,17 @@ namespace Picasso
 // Physical frame - the physical representation in the chosen mapping
 // coordinate system.
 //
-// Reference frame - the logical representation in the local grid reference
+// Reference frame - the logical representation in the grid reference
 // frame. Combined with global mesh information, the mesh mapping
 // implementation can convert this to a logical representation in the global
 // grid reference frame.
 //
 // The global reference frame spans from [0,globalNumCell(dim)] in each
-// dimension. The mesh data structure created from this mapping will apply
-// domain decomposition to the global reference frame and create a local
-// reference frame. Note that the global reference frame will be padded in
+// dimension. Note that the global reference frame will be padded in
 // non-periodic dimensions by the base halo width when the mesh is constructed
 // to allow for stencil operations outside of the domain. Therefore in
 // practice the global reference frame spans from
-// [-base_halo,globalNumCell(dim)+base_halo] in each dimension.
+// [-halo_width,globalNumCell(dim)+halo_width] in each dimension.
 //
 template <class Mapping>
 struct CurvilinearMeshMapping
@@ -65,22 +63,22 @@ struct CurvilinearMeshMapping
     // Get the periodicity of a given logical dimension of the mapping.
     static bool periodic( const Mapping& mapping, const int dim );
 
-    // Forward mapping. Given coordinates in the local reference frame compute
+    // Forward mapping. Given coordinates in the reference frame compute
     // the coordinates in the physical frame.
     template<class ReferenceCoords, class PhysicalCoords>
     static KOKKOS_INLINE_FUNCTION void
     mapToPhysicalFrame( const Mapping& mapping,
-                        const ReferenceCoords& local_ref_coords,
+                        const ReferenceCoords& reference_coords,
                         PhysicalCoords& physical_coords );
 
-    // Given coordinates in the local reference frame compute the grid
+    // Given coordinates in the reference frame compute the grid
     // transformation metrics. This is the jacobian of the forward mapping,
     // its determinant, and inverse.
     template<class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION void
     transformationMetrics(
         const Mapping& mapping,
-        const ReferenceCoords& local_ref_coords,
+        const ReferenceCoords& reference_coords,
         LinearAlgebra::Matrix<typename ReferenceCoords::value_type,
         num_space_dim,num_space_dim>& jacobian,
         typename ReferenceCoords::value_type& jacobian_det,
@@ -88,14 +86,14 @@ struct CurvilinearMeshMapping
         num_space_dim,num_space_dim>& jacobian_inv );
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame. The data in local_ref_coords
+    // coordinates in the reference frame. The data in reference_coords
     // will be used as the initial guess. Return whether or not the mapping
     // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const Mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         ReferenceCoords& local_ref_coords );
+                         ReferenceCoords& reference_coords );
 };
 
 //---------------------------------------------------------------------------//
@@ -109,14 +107,14 @@ struct DefaultCurvilinearMeshMapping
     // a default implementation of the transformation metrics.
 
     // Reverse mapping. Given coordinates in the physical frame compute the
-    // coordinates in the local reference frame. The data in local_ref_coords
+    // coordinates in the reference frame. The data in reference_coords
     // will be used as the initial guess. Return whether or not the mapping
     // succeeded.
     template<class PhysicalCoords, class ReferenceCoords>
     static KOKKOS_INLINE_FUNCTION bool
     mapToReferenceFrame( const Mapping& mapping,
                          const PhysicalCoords& physical_coords,
-                         ReferenceCoords& local_ref_coords )
+                         ReferenceCoords& reference_coords )
     {
         using value_type = typename PhysicalCoords::value_type;
 
@@ -138,8 +136,9 @@ struct DefaultCurvilinearMeshMapping
         value_type error;
         for ( int n = 0; n < max_iter; ++n )
         {
+
             // Update iteration.
-            x_ref_old = local_ref_coords;
+            x_ref_old = reference_coords;
 
             // Compute jacobian.
             CurvilinearMeshMapping<Mapping>::transformationMetrics(
@@ -150,11 +149,34 @@ struct DefaultCurvilinearMeshMapping
                 mapping, x_ref_old, x_phys_new );
 
             // Update solution.
-            local_ref_coords =
+            reference_coords =
                 jacobian_inv * ( physical_coords - x_phys_new ) + x_ref_old;
 
             // Check for convergence.
-            error = ~(local_ref_coords - x_ref_old) * (local_ref_coords - x_ref_old);
+            error = ~(reference_coords - x_ref_old) * (reference_coords - x_ref_old);
+            // std::cout << "ITER " << n << std::endl;
+            // std::cout << "jacobian " << jacobian(0,0) << " " << jacobian(0,1)
+            //           << " " << jacobian(0,2) << std::endl;
+            // std::cout << "         " << jacobian(1,0) << " " << jacobian(1,1)
+            //           << " " << jacobian(1,2) << std::endl;
+            // std::cout << "         " << jacobian(2,0) << " " << jacobian(2,1)
+            //           << " " << jacobian(2,2) << std::endl;
+            // std::cout << "jacobian_det " << jacobian_det << std::endl;
+            // std::cout << "jacobian_inv " << jacobian_inv(0,0) << " " << jacobian_inv(0,1)
+            //           << " " << jacobian_inv(0,2) << std::endl;
+            // std::cout << "             " << jacobian_inv(1,0) << " " << jacobian_inv(1,1)
+            //           << " " << jacobian_inv(1,2) << std::endl;
+            // std::cout << "             " << jacobian_inv(2,0) << " " << jacobian_inv(2,1)
+            //           << " " << jacobian_inv(2,2) << std::endl;
+            // std::cout << "x_ref_old " << x_ref_old(0) << " " << x_ref_old(1) << " "
+            //           << x_ref_old(2) << std::endl;
+            // std::cout << "x_phys_new " << x_phys_new(0) << " " << x_phys_new(1) << " "
+            //           << x_phys_new(2) << std::endl;
+            // std::cout << "physical_coords " << physical_coords(0) << " " << physical_coords(1) << " "
+            //           << physical_coords(2) << std::endl;
+            // std::cout << "reference_coords " << reference_coords(0) << " " << reference_coords(1) << " "
+            //           << reference_coords(2) << std::endl;
+            // std::cout << error << std::endl;
 
             // Return true if we converged.
             if ( error < tol2 )
